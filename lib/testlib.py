@@ -45,6 +45,11 @@
 # - real TestSkipped support (i.e. a test runner that handles it)
 # - make the quiet option actually quiet
 
+__revision__ = "$Id$"
+__version_info__ = (0, 2, 0)
+__version__ = '.'.join(map(str, __version_info__))
+
+
 import os
 from os.path import join, basename, dirname, abspath, splitext, \
                     isfile, isdir, normpath, exists
@@ -68,12 +73,17 @@ import textwrap
 log = logging.getLogger("test")
 
 
+
 #---- exports generally useful to test cases
 
 class TestError(Exception):
     pass
 
 class TestSkipped(Exception):
+    """Raise this to indicate that a test is being skipped.
+
+    ConsoleTestRunner knows to interpret these at NOT failures.
+    """
     pass
 
 class TestFailed(Exception):
@@ -135,6 +145,9 @@ class Test:
         self.testmod = testmod
         self.testcase = testcase
         self.testfn_name = testfn_name
+        # Give each testcase a _testlib_shortname_ attribute. Test runners
+        # that only have the testcases can then use this name.
+        self.testcase._testlib_shortname_ = self.shortname()
     def __str__(self):
         return self.shortname()
     def __repr__(self):
@@ -289,7 +302,7 @@ def test(testdirs, tags=[], setup_func=None):
     if tests and setup_func is not None:
         setup_func()
     suite = unittest.TestSuite([t.testcase for t in tests])
-    runner = unittest.TextTestRunner(sys.stdout, verbosity=2)
+    runner = ConsoleTestRunner(sys.stdout)
     result = runner.run(suite)
 
 def list_tests(testdirs, tags):
@@ -353,6 +366,114 @@ def list_tests(testdirs, tags):
             if t.doc():
                 line += t.doc().splitlines(0)[0]
             print _one_line_summary_from_text(line)
+
+
+#---- text test runner that can handle TestSkipped reasonably
+
+class _ConsoleTestResult(unittest.TestResult):
+    """A test result class that can print formatted text results to a stream.
+
+    Used by ConsoleTestRunner.
+    """
+    separator1 = '=' * 70
+    separator2 = '-' * 70
+
+    def __init__(self, stream):
+        unittest.TestResult.__init__(self)
+        self.skips = []
+        self.stream = stream
+
+    def getDescription(self, test):
+        return test._testlib_shortname_
+        ##TODO
+        #return str(test)
+
+    def startTest(self, test):
+        unittest.TestResult.startTest(self, test)
+        self.stream.write(self.getDescription(test))
+        self.stream.write(" ... ")
+
+    def addSuccess(self, test):
+        unittest.TestResult.addSuccess(self, test)
+        self.stream.write("ok\n")
+
+    def addSkip(self, test, err):
+        why = str(err[1])
+        self.skips.append((test, why))
+        self.stream.write("skipped (%s)\n" % why)
+
+    def addError(self, test, err):
+        if isinstance(err[1], TestSkipped):
+            self.addSkip(test, err)
+        else:
+            unittest.TestResult.addError(self, test, err)
+            self.stream.write("ERROR\n")
+
+    def addFailure(self, test, err):
+        unittest.TestResult.addFailure(self, test, err)
+        self.stream.write("FAIL\n")
+
+    def printSummary(self):
+        self.stream.write('\n')
+        self.printErrorList('ERROR', self.errors)
+        self.printErrorList('FAIL', self.failures)
+
+    def printErrorList(self, flavour, errors):
+        for test, err in errors:
+            self.stream.write(self.separator1 + '\n')
+            self.stream.write("%s: %s\n"
+                              % (flavour, self.getDescription(test)))
+            self.stream.write(self.separator2 + '\n')
+            self.stream.write("%s\n" % err)
+
+
+class ConsoleTestRunner:
+    """A test runner class that displays results on the console.
+
+    It prints out the names of tests as they are run, errors as they
+    occur, and a summary of the results at the end of the test run.
+    
+    Differences with unittest.TextTestRunner:
+    - adds support for *skipped* tests (those that raise TestSkipped)
+    - no verbosity option (only have equiv of verbosity=2)
+    - test "short desc" is it 3-level tag name (e.g. 'foo/bar/baz' where
+      that identifies: 'test_foo.py::BarTestCase.test_baz'.
+    """
+    def __init__(self, stream=sys.stderr):
+        self.stream = stream
+
+    def run(self, test_or_suite):
+        """Run the given test case or test suite."""
+        result = _ConsoleTestResult(self.stream)
+        start_time = time.time()
+        test_or_suite(result)
+        time_taken = time.time() - start_time
+
+        result.printSummary()
+        self.stream.write(result.separator2 + '\n')
+        self.stream.write("Ran %d test%s in %.3fs\n\n"
+            % (result.testsRun, result.testsRun != 1 and "s" or "",
+               time_taken))
+        details = []
+        num_skips = len(result.skips)
+        if num_skips:
+            details.append("%d skip%s"
+                % (num_skips, (num_skips != 1 and "s" or "")))
+        if not result.wasSuccessful():
+            num_failures = len(result.failures)
+            if num_failures:
+                details.append("%d failure%s"
+                    % (num_failures, (num_failures != 1 and "s" or "")))
+            num_errors = len(result.errors)
+            if num_errors:
+                details.append("%d error%s"
+                    % (num_errors, (num_errors != 1 and "s" or "")))
+            self.stream.write("FAILED (%s)\n" % ', '.join(details))
+        elif details:
+            self.stream.write("OK (%s)\n" % ', '.join(details))
+        else:
+            self.stream.write("OK\n")
+        return result
 
 
 
