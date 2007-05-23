@@ -28,7 +28,8 @@
     
         test python         # run tests with the 'python' tag
         test python cpln    # run tests with both 'python' and 'cpln' tags
-        test -python        # exclude tests with the 'python' tag
+        test -- -python     # exclude tests with the 'python' tag
+                            # (the '--' is necessary to end the option list)
     
     The full name and base name of a test module are implicit tags for that
     module, e.g. module "test_xdebug.py" has tags "test_xdebug" and "xdebug".
@@ -37,7 +38,7 @@
     and "foo" implicit tags.
 
     Tags can be added explicitly added:
-    - to modules via a __tags__ globa list; and
+    - to modules via a __tags__ global list; and
     - to individual test_* methods via a "tags" attribute list (you can
       use the testlib.tag() decorator for this).
 """
@@ -46,7 +47,7 @@
 # - make the quiet option actually quiet
 
 __revision__ = "$Id$"
-__version_info__ = (0, 2, 0)
+__version_info__ = (0, 2, 1)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -591,12 +592,8 @@ def _one_line_summary_from_text(text, length=78, escapes="eol"):
 
 def _parse_opts(args):
     """_parse_opts(args) -> (log_level, action, tags)"""
-    try:
-        opts, raw_tags = getopt.getopt(args, "hvqdlL:",
-            ["help", "verbose", "quiet", "debug", "list"])
-    except getopt.error, ex:
-        log.error(str(ex))
-        return 1
+    opts, raw_tags = getopt.getopt(args, "hvqdlL:",
+        ["help", "verbose", "quiet", "debug", "list"])
     log_level = logging.WARN
     action = "test"
     for opt, optarg in opts:
@@ -659,7 +656,11 @@ def harness(testdirs=[os.curdir], argv=sys.argv, setup_func=None):
             sys.exit(retval)
     """
     logging.basicConfig()
-    log_level, action, tags = _parse_opts(argv[1:])
+    try:
+        log_level, action, tags = _parse_opts(argv[1:])
+    except getopt.error, ex:
+        log.error(str(ex) + " (did you need a '--' before a '-TAG' argument?)")
+        return 1
     log.setLevel(log_level)
 
     if action == "help":
