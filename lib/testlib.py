@@ -43,11 +43,12 @@
       use the testlib.tag() decorator for this).
 """
 #TODO:
-# - real TestSkipped support (i.e. a test runner that handles it)
-# - make the quiet option actually quiet
+# - Document how tests are found (note the special "test_cases()" hook).
+# - See the optparse "TODO" below.
+# - Make the quiet option actually quiet.
 
 __revision__ = "$Id$"
-__version_info__ = (0, 2, 1)
+__version_info__ = (0, 3, 0)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -142,7 +143,8 @@ def timedtest(max_time, tolerance=TOLERANCE):
 #---- module api
 
 class Test:
-    def __init__(self, testmod, testcase, testfn_name):
+    def __init__(self, ns, testmod, testcase, testfn_name):
+        self.ns = ns
         self.testmod = testmod
         self.testcase = testcase
         self.testfn_name = testfn_name
@@ -157,6 +159,8 @@ class Test:
         bits = [self._normname(self.testmod.__name__),
                 self._normname(self.testcase.__class__.__name__),
                 self._normname(self.testfn_name)]
+        if self.ns:
+            bits.insert(0, self.ns)
         return '/'.join(bits)
     def _flatten_tags(self, tags):
         """Split tags with '/' in them into multiple tags.
@@ -181,14 +185,17 @@ class Test:
             tags += testfn.tags
         return self._flatten_tags(tags)
     def implicit_tags(self):
-        return self._flatten_tags([
+        tags = [
             self.testmod.__name__.lower(),
             self._normname(self.testmod.__name__),
             self.testcase.__class__.__name__.lower(),
             self._normname(self.testcase.__class__.__name__),
             self.testfn_name,
             self._normname(self.testfn_name),
-        ])
+        ]
+        if self.ns:
+            tags.insert(0, self.ns)
+        return self._flatten_tags(tags)
     def tags(self):
         return self.explicit_tags() + self.implicit_tags()
     def doc(self):
@@ -215,24 +222,22 @@ def testmod_paths_from_testdir(testdir):
         if not isfile(join(path, "__init__.py")): continue
         yield path
 
-def testmods_from_testdirs(testdirs):
-    """Generate test modules in the given test dirs."""
-    testmods = []
-    for testdir in testdirs:
-        testdir = normpath(testdir)
-        for testmod_path in testmod_paths_from_testdir(testdir):
-            testmod_name = splitext(basename(testmod_path))[0]
-            log.debug("import test module '%s'", testmod_path)
-            try:
-                iinfo = imp.find_module(testmod_name, [dirname(testmod_path)])
-                testmod = imp.load_module(testmod_name, *iinfo)
-            except TestSkipped, ex:
-                log.warn("'%s' module skipped: %s", testmod_name, ex)
-            except (SyntaxError, ImportError, NameError), ex:
-                log.warn("could not import test module '%s': %s (skipping)",
-                         testmod_path, ex)
-            else:
-                yield testmod
+def testmods_from_testdir(testdir):
+    """Generate test modules in the given test dir."""
+    testdir = normpath(testdir)
+    for testmod_path in testmod_paths_from_testdir(testdir):
+        testmod_name = splitext(basename(testmod_path))[0]
+        log.debug("import test module '%s'", testmod_path)
+        try:
+            iinfo = imp.find_module(testmod_name, [dirname(testmod_path)])
+            testmod = imp.load_module(testmod_name, *iinfo)
+        except TestSkipped, ex:
+            log.warn("'%s' module skipped: %s", testmod_name, ex)
+        except (SyntaxError, ImportError, NameError), ex:
+            log.warn("could not import test module '%s': %s (skipping)",
+                     testmod_path, ex)
+        else:
+            yield testmod
 
 def testcases_from_testmod(testmod):
     class TestListLoader(unittest.TestLoader):
@@ -260,22 +265,23 @@ def testcases_from_testmod(testmod):
                 else:
                     yield testcase
 
-def tests_from_testdirs(testdirs):
-    for testmod in testmods_from_testdirs(testdirs):
-        for testcase in testcases_from_testmod(testmod):
-            try:
-                yield Test(testmod, testcase,
-                           testcase._testMethodName)
-            except AttributeError:
-                # Python 2.4 and older:
-                yield Test(testmod, testcase,
-                           testcase._TestCase__testMethodName)
+def tests_from_manifest(testdir_from_ns):
+    for ns, testdir in testdir_from_ns.items():
+        for testmod in testmods_from_testdir(testdir):
+            for testcase in testcases_from_testmod(testmod):
+                try:
+                    yield Test(ns, testmod, testcase,
+                               testcase._testMethodName)
+                except AttributeError:
+                    # Python 2.4 and older:
+                    yield Test(ns, testmod, testcase,
+                               testcase._TestCase__testMethodName)
 
-def tests_from_testdirs_and_tags(testdirs, tags):
+def tests_from_manifest_and_tags(testdir_from_ns, tags):
     include_tags = [tag.lower() for tag in tags if not tag.startswith('-')]
     exclude_tags = [tag[1:].lower() for tag in tags if tag.startswith('-')]
 
-    for test in tests_from_testdirs(testdirs):
+    for test in tests_from_manifest(testdir_from_ns):
         test_tags = [t.lower() for t in test.tags()]
 
         matching_exclude_tags = [t for t in exclude_tags if t in test_tags]
@@ -297,16 +303,17 @@ def tests_from_testdirs_and_tags(testdirs, tags):
                           ' '.join(tags))
                 yield test
                 
-def test(testdirs, tags=[], setup_func=None):
-    log.debug("test(testdirs=%r, tags=%r, ...)", testdirs, tags)
-    tests = tests_from_testdirs_and_tags(testdirs, tags)
+def test(testdir_from_ns, tags=[], setup_func=None):
+    log.debug("test(testdir_from_ns=%r, tags=%r, ...)",
+              testdir_from_ns, tags)
+    tests = tests_from_manifest_and_tags(testdir_from_ns, tags)
     if tests and setup_func is not None:
         setup_func()
     suite = unittest.TestSuite([t.testcase for t in tests])
     runner = ConsoleTestRunner(sys.stdout)
     result = runner.run(suite)
 
-def list_tests(testdirs, tags):
+def list_tests(testdir_from_ns, tags):
     # Say I have two test_* modules:
     #   test_python.py:
     #       __tags__ = ["guido"]
@@ -325,17 +332,18 @@ def list_tests(testdirs, tags):
     #           def test_foo(self):
     #           def test_bar(self):
     # The short-form list output for this should look like:
-    #   python/basic/def    [guido] desc...
-    #   python/basic/class  [guido] desc...
-    #   python/complex/foo  [guido] desc...
-    #   python/complex/bar  [guido] desc...
-    #   perl/basic/sub      [larry, wall] desc...
-    #   perl/basic/package  [larry, wall] desc...
-    #   perl/eclectic/foo   [larry, wall] desc...
-    #   perl/eclectic/bar   [larry, wall] desc...
-    log.debug("list_tests(testdirs=%r, tags=%r)", testdirs, tags)
+    #   python/basic/def [guido]
+    #   python/basic/class [guido]
+    #   python/complex/foo [guido]
+    #   python/complex/bar [guido]
+    #   perl/basic/sub [larry, wall]
+    #   perl/basic/package [larry, wall]
+    #   perl/eclectic/foo [larry, wall]
+    #   perl/eclectic/bar [larry, wall]
+    log.debug("list_tests(testdir_from_ns=%r, tags=%r)",
+              testdir_from_ns, tags)
 
-    tests = list(tests_from_testdirs_and_tags(testdirs, tags))
+    tests = list(tests_from_manifest_and_tags(testdir_from_ns, tags))
     if not tests:
         return
 
@@ -347,26 +355,19 @@ def list_tests(testdirs, tags):
             testfile = t.testmod.__file__
             if testfile.endswith(".pyc"):
                 testfile = testfile[:-1]
-            print "%s: %s.%s()" \
-                  % (testfile,
-                     t.testcase.__class__.__name__,
-                     t.testfn_name)
-            print "    name: %s" % t.shortname()
+            print "%s:" % t.shortname()
+            print "  from: %s#%s.%s" \
+                  % (testfile, t.testcase.__class__.__name__, t.testfn_name)
             wrapped = textwrap.fill(' '.join(t.tags()), WIDTH-10)
-            print "    tags: %s"\
-                  % _indent(wrapped, 10, True)
+            print "  tags: %s" % _indent(wrapped, 8, True)
             if t.doc():
-                print _indent(t.doc())
+                print _indent(t.doc(), width=2)
     else:
-        SHORTNAME_WIDTH = max([len(t.shortname()) for t in tests])
         for t in tests:
-            line = t.shortname() + ' '*(SHORTNAME_WIDTH-len(t.shortname()))
-            line += ' '*2
+            line = t.shortname() + ' '
             if t.explicit_tags():
                 line += '[%s]' % ' '.join(t.explicit_tags())
-            if t.doc():
-                line += t.doc().splitlines(0)[0]
-            print _one_line_summary_from_text(line)
+            print line
 
 
 #---- text test runner that can handle TestSkipped reasonably
@@ -480,7 +481,7 @@ class ConsoleTestRunner:
 
 #---- internal support stuff
 
-# Recipe: indent (0.2.1) in C:\trentm\tm\recipes\cookbook
+# Recipe: indent (0.2.1)
 def _indent(s, width=4, skip_first_line=False):
     """_indent(s, [width=4]) -> 's' indented by 'width' spaces
 
@@ -495,76 +496,12 @@ def _indent(s, width=4, skip_first_line=False):
         return indentstr + indentstr.join(lines)
 
 
-def _escaped_text_from_text(text, escapes="eol"):
-    r"""Return escaped version of text.
 
-        "escapes" is either a mapping of chars in the source text to
-            replacement text for each such char or one of a set of
-            strings identifying a particular escape style:
-                eol
-                    replace EOL chars with '\r' and '\n', maintain the actual
-                    EOLs though too
-                whitespace
-                    replace EOL chars as above, tabs with '\t' and spaces
-                    with periods ('.')
-                eol-one-line
-                    replace EOL chars with '\r' and '\n'
-                whitespace-one-line
-                    replace EOL chars as above, tabs with '\t' and spaces
-                    with periods ('.')
-    """
-    #TODO:
-    # - Add 'c-string' style.
-    # - Add _escaped_html_from_text() with a similar call sig.
-    import re
-    
-    if isinstance(escapes, basestring):
-        if escapes == "eol":
-            escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r"}
-        elif escapes == "whitespace":
-            escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r",
-                       '\t': "\\t", ' ': "."}
-        elif escapes == "eol-one-line":
-            escapes = {'\n': "\\n", '\r': "\\r"}
-        elif escapes == "whitespace-one-line":
-            escapes = {'\n': "\\n", '\r': "\\r", '\t': "\\t", ' ': '.'}
-        else:
-            raise ValueError("unknown text escape style: %r" % escapes)
-
-    # Sort longer replacements first to allow, e.g. '\r\n' to beat '\r' and
-    # '\n'.
-    escapes_keys = escapes.keys()
-    escapes_keys.sort(key=lambda a: len(a), reverse=True)
-    def repl(match):
-        val = escapes[match.group(0)]
-        return val
-    escaped = re.sub("(%s)" % '|'.join([re.escape(k) for k in escapes_keys]),
-                     repl,
-                     text)
-
-    return escaped
-
-def _one_line_summary_from_text(text, length=78, escapes="eol"):
-    r"""Summarize the given text with one line of the given length.
-    
-        "text" is the text to summarize
-        "length" (default 78) is the max length for the summary
-        "escapes" is as per _escaped_text_from_text()
-    """
-    if len(text) > length:
-        head = text[:length-3]
-    else:
-        head = text
-    escaped = _escaped_text_from_text(head, escapes)
-    if len(text) > length:
-        summary = escaped[:length-3] + "..."
-    else:
-        summary = escaped
-    return summary
 
 
 #---- mainline
 
+#TODO: pass in add_help_option=False and add it ourself here.
 ## Optparse's handling of the doc passed in for -h|--help handling is
 ## abysmal. Hence we'll stick with getopt.
 #def _parse_opts(args):
@@ -632,9 +569,17 @@ def _parse_opts(args):
     return log_level, action, tags
 
 
-def harness(testdirs=[os.curdir], argv=sys.argv, setup_func=None):
+def harness(testdir_from_ns={None: os.curdir}, argv=sys.argv,
+            setup_func=None):
     """Convenience mainline for a test harness "test.py" script.
 
+        "testdir_from_ns" (optional) is basically a set of directories in
+            which to look for test cases. It is a dict with:
+                <namespace>: <testdir>
+            where <namespace> is a (short) string that becomes part of the
+            included test names and an implicit tag for filtering those
+            tests. By default the current dir is use with an empty namespace:
+                {None: os.curdir}
         "setup_func" (optional) is a callable that will be called once
             before any tests are run to prepare for the test suite. It
             is not called if no tests will be run.
@@ -643,16 +588,8 @@ def harness(testdirs=[os.curdir], argv=sys.argv, setup_func=None):
     a test harness, "test.py", for them that looks like this:
 
         #!/usr/bin/env python
-        import os
-        import sys
-        import testlib
-        testdirs = [
-            # Add the path (relative to test.py, if relative) to each
-            # directory from which to gather test_* modules.
-            os.curdir,
-        ]
         if __name__ == "__main__":
-            retval = testlib.harness(testdirs=testdirs)
+            retval = testlib.harness()
             sys.exit(retval)
     """
     logging.basicConfig()
@@ -667,9 +604,9 @@ def harness(testdirs=[os.curdir], argv=sys.argv, setup_func=None):
         print __doc__
         return 0
     if action == "list":
-        return list_tests(testdirs, tags)
+        return list_tests(testdir_from_ns, tags)
     elif action == "test":
-        return test(testdirs, tags, setup_func=setup_func)
+        return test(testdir_from_ns, tags, setup_func=setup_func)
     else:
         raise TestError("unexpected action/mode: '%s'" % action)
 
