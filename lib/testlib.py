@@ -224,14 +224,21 @@ def testmod_paths_from_testdir(testdir):
         yield path
 
 def testmods_from_testdir(testdir):
-    """Generate test modules in the given test dir."""
+    """Generate test modules in the given test dir.
+    
+    Modules are imported with 'testdir' first on sys.path.
+    """
     testdir = normpath(testdir)
     for testmod_path in testmod_paths_from_testdir(testdir):
         testmod_name = splitext(basename(testmod_path))[0]
         log.debug("import test module '%s'", testmod_path)
         try:
             iinfo = imp.find_module(testmod_name, [dirname(testmod_path)])
-            testmod = imp.load_module(testmod_name, *iinfo)
+            sys.path.insert(0, testdir)
+            try:
+                testmod = imp.load_module(testmod_name, *iinfo)
+            finally:
+                del sys.path[0]
         except TestSkipped, ex:
             log.warn("'%s' module skipped: %s", testmod_name, ex)
         except Exception, ex:
