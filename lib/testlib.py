@@ -48,7 +48,7 @@
 # - Make the quiet option actually quiet.
 
 __revision__ = "$Id$"
-__version_info__ = (0, 3, 0)
+__version_info__ = (0, 3, 1)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -245,13 +245,24 @@ def testcases_from_testmod(testmod):
 
     loader = TestListLoader()
     if hasattr(testmod, "test_cases"):
-        for testcase_class in testmod.test_cases():
-            if testcase_class.__name__.startswith("_"):
-                log.debug("skip private TestCase class '%s'",
-                          testcase_class.__name__)
-                continue
-            for testcase in loader.loadTestsFromTestCase(testcase_class):
-                yield testcase
+        try:
+            for testcase_class in testmod.test_cases():
+                if testcase_class.__name__.startswith("_"):
+                    log.debug("skip private TestCase class '%s'",
+                              testcase_class.__name__)
+                    continue
+                for testcase in loader.loadTestsFromTestCase(testcase_class):
+                    yield testcase
+        except Exception, ex:
+            testmod_path = testmod.__file__
+            if testmod_path.endswith(".pyc"):
+                testmod_path = testmod_path[:-1]
+            log.warn("error running test_cases() in '%s': %s (skipping, "
+                     "run with '-d' for full traceback)",
+                     testmod_path, ex)
+            if log.isEnabledFor(logging.DEBUG):
+                import traceback
+                traceback.print_exc()
     else:
         class_names_skipped = []
         for testcases in loader.loadTestsFromModule(testmod):
