@@ -67,6 +67,7 @@ import imp
 import optparse
 import logging
 import textwrap
+import traceback
 
 
 
@@ -233,9 +234,12 @@ def testmods_from_testdir(testdir):
             testmod = imp.load_module(testmod_name, *iinfo)
         except TestSkipped, ex:
             log.warn("'%s' module skipped: %s", testmod_name, ex)
-        except (SyntaxError, ImportError, NameError), ex:
-            log.warn("could not import test module '%s': %s (skipping)",
+        except Exception, ex:
+            log.warn("could not import test module '%s': %s (skipping, "
+                     "run with '-d' for full traceback)",
                      testmod_path, ex)
+            if log.isEnabledFor(logging.DEBUG):
+                traceback.print_exc()
         else:
             yield testmod
 
@@ -261,7 +265,6 @@ def testcases_from_testmod(testmod):
                      "run with '-d' for full traceback)",
                      testmod_path, ex)
             if log.isEnabledFor(logging.DEBUG):
-                import traceback
                 traceback.print_exc()
     else:
         class_names_skipped = []
