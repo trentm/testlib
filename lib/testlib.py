@@ -48,7 +48,7 @@
 # - Make the quiet option actually quiet.
 
 __revision__ = "$Id$"
-__version_info__ = (0, 3, 1)
+__version_info__ = (0, 3, 2)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -307,8 +307,8 @@ def tests_from_manifest_and_tags(testdir_from_ns, tags):
 
         matching_exclude_tags = [t for t in exclude_tags if t in test_tags]
         if matching_exclude_tags:
-            log.debug("test '%s' matches exclude tag(s) '%s': skipping",
-                      test.shortname(), "', '".join(matching_exclude_tags))
+            #log.debug("test '%s' matches exclude tag(s) '%s': skipping",
+            #          test.shortname(), "', '".join(matching_exclude_tags))
             continue
 
         if not include_tags:
@@ -316,12 +316,12 @@ def tests_from_manifest_and_tags(testdir_from_ns, tags):
         else:
             for tag in include_tags:
                 if tag not in test_tags:
-                    log.debug("test '%s' does not match tag '%s': skipping",
-                              test.shortname(), tag)
+                    #log.debug("test '%s' does not match tag '%s': skipping",
+                    #          test.shortname(), tag)
                     break
             else:
-                log.debug("test '%s' matches tags: %s", test.shortname(),
-                          ' '.join(tags))
+                #log.debug("test '%s' matches tags: %s", test.shortname(),
+                #          ' '.join(tags))
                 yield test
                 
 def test(testdir_from_ns, tags=[], setup_func=None):
@@ -333,6 +333,7 @@ def test(testdir_from_ns, tags=[], setup_func=None):
     suite = unittest.TestSuite([t.testcase for t in tests])
     runner = ConsoleTestRunner(sys.stdout)
     result = runner.run(suite)
+    return result
 
 def list_tests(testdir_from_ns, tags):
     # Say I have two test_* modules:
@@ -627,7 +628,8 @@ def harness(testdir_from_ns={None: os.curdir}, argv=sys.argv,
     if action == "list":
         return list_tests(testdir_from_ns, tags)
     elif action == "test":
-        return test(testdir_from_ns, tags, setup_func=setup_func)
+        result = test(testdir_from_ns, tags, setup_func=setup_func)
+        return len(result.errors) + len(result.failures)
     else:
         raise TestError("unexpected action/mode: '%s'" % action)
 
