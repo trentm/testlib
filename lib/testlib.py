@@ -48,7 +48,7 @@
 # - Make the quiet option actually quiet.
 
 __revision__ = "$Id$"
-__version_info__ = (0, 3, 2)
+__version_info__ = (0, 3, 3)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -149,9 +149,11 @@ class Test:
         self.testmod = testmod
         self.testcase = testcase
         self.testfn_name = testfn_name
-        # Give each testcase a _testlib_shortname_ attribute. Test runners
-        # that only have the testcases can then use this name.
+        # Give each testcase some extra testlib attributes for useful
+        # introspection on TestCase instances later on.
         self.testcase._testlib_shortname_ = self.shortname()
+        self.testcase._testlib_explicit_tags_ = self.explicit_tags()
+        self.testcase._testlib_implicit_tags_ = self.implicit_tags()
     def __str__(self):
         return self.shortname()
     def __repr__(self):
@@ -408,9 +410,11 @@ class _ConsoleTestResult(unittest.TestResult):
         self.stream = stream
 
     def getDescription(self, test):
-        return test._testlib_shortname_
-        ##TODO
-        #return str(test)
+        if test._testlib_explicit_tags_:
+            return "%s [%s]" % (test._testlib_shortname_,
+                                ', '.join(test._testlib_explicit_tags_))
+        else:
+            return test._testlib_shortname_
 
     def startTest(self, test):
         unittest.TestResult.startTest(self, test)
