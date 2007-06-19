@@ -43,12 +43,13 @@
       use the testlib.tag() decorator for this).
 """
 #TODO:
-# - Document how tests are found (note the special "test_cases()" hook).
+# - Document how tests are found (note the special "test_cases()" and
+#   "test_suite_class" hooks).
 # - See the optparse "TODO" below.
 # - Make the quiet option actually quiet.
 
 __revision__ = "$Id$"
-__version_info__ = (0, 3, 3)
+__version_info__ = (0, 4, 0)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -144,11 +145,13 @@ def timedtest(max_time, tolerance=TOLERANCE):
 #---- module api
 
 class Test:
-    def __init__(self, ns, testmod, testcase, testfn_name):
+    def __init__(self, ns, testmod, testcase, testfn_name,
+                 testsuite_class=None):
         self.ns = ns
         self.testmod = testmod
         self.testcase = testcase
         self.testfn_name = testfn_name
+        self.testsuite_class = testsuite_class
         # Give each testcase some extra testlib attributes for useful
         # introspection on TestCase instances later on.
         self.testcase._testlib_shortname_ = self.shortname()
@@ -253,6 +256,22 @@ def testmods_from_testdir(testdir):
             yield testmod
 
 def testcases_from_testmod(testmod):
+    """Gather tests from a 'test_*' module.
+    
+    Returns a list of TestCase-subclass instances. One instance for each
+    found test function.
+    
+    In general the normal unittest TestLoader.loadTests*() semantics are
+    used for loading tests with some differences:
+    - TestCase subclasses beginning with '_' are skipped (presumed to be
+      internal).
+    - If the module has a top-level "test_cases", it is called for a list of
+      TestCase subclasses from which to load tests (can be a generator). This
+      allows for run-time setup of test cases.
+    - If the module has a top-level "test_suite_class", it is used to group
+      all test cases from that module into an instance of that TestSuite
+      subclass. This allows for overriding of test running behaviour.
+    """
     class TestListLoader(unittest.TestLoader):
         suiteClass = list
 
@@ -288,17 +307,45 @@ def testcases_from_testmod(testmod):
                 else:
                     yield testcase
 
+
 def tests_from_manifest(testdir_from_ns):
+    """Return a list of `testlib.Test` instances for each test found in
+    the manifest.
+    
+    There will be a test for
+    (a) each "test*" function of
+    (b) each TestCase-subclass in
+    (c) each "test_*" Python module in
+    (d) each test dir in the manifest.
+    
+    
+    If a "test_*" module has a top-level "test_suite_class", it will later
+    be used to group all test cases from that module into an instance of that
+    TestSuite subclass. This allows for overriding of test running behaviour.
+    """
     for ns, testdir in testdir_from_ns.items():
         for testmod in testmods_from_testdir(testdir):
+            if hasattr(testmod, "test_suite_class"):
+                testsuite_class = testmod.test_suite_class
+                if not issubclass(testsuite_class, unittest.TestSuite):
+                    testmod_path = testmod.__file__
+                    if testmod_path.endswith(".pyc"):
+                        testmod_path = testmod_path[:-1]
+                    log.warn("'test_suite_class' of '%s' module is not a "
+                             "subclass of 'unittest.TestSuite': ignoring",
+                             testmod_path)
+            else:
+                testsuite_class = None
             for testcase in testcases_from_testmod(testmod):
                 try:
                     yield Test(ns, testmod, testcase,
-                               testcase._testMethodName)
+                               testcase._testMethodName,
+                               testsuite_class)
                 except AttributeError:
                     # Python 2.4 and older:
                     yield Test(ns, testmod, testcase,
-                               testcase._TestCase__testMethodName)
+                               testcase._TestCase__testMethodName,
+                               testsuite_class)
 
 def tests_from_manifest_and_tags(testdir_from_ns, tags):
     include_tags = [tag.lower() for tag in tags if not tag.startswith('-')]
@@ -329,10 +376,27 @@ def tests_from_manifest_and_tags(testdir_from_ns, tags):
 def test(testdir_from_ns, tags=[], setup_func=None):
     log.debug("test(testdir_from_ns=%r, tags=%r, ...)",
               testdir_from_ns, tags)
-    tests = tests_from_manifest_and_tags(testdir_from_ns, tags)
+    tests = list(tests_from_manifest_and_tags(testdir_from_ns, tags))
+    if not tests:
+        return None
     if tests and setup_func is not None:
         setup_func()
-    suite = unittest.TestSuite([t.testcase for t in tests])
+    
+    # Groups test cases into a test suite class given by their test module's
+    # "test_suite_class" hook, if any.
+    suite = unittest.TestSuite()
+    suite_for_testmod = None
+    testmod = None
+    for test in tests:
+        if test.testmod != testmod:
+            if suite_for_testmod is not None:
+                suite.addTest(suite_for_testmod)
+            suite_for_testmod = (test.testsuite_class or unittest.TestSuite)()
+            testmod = test.testmod
+        suite_for_testmod.addTest(test.testcase)
+    if suite_for_testmod is not None:
+        suite.addTest(suite_for_testmod)
+    
     runner = ConsoleTestRunner(sys.stdout)
     result = runner.run(suite)
     return result
@@ -474,7 +538,7 @@ class ConsoleTestRunner:
         """Run the given test case or test suite."""
         result = _ConsoleTestResult(self.stream)
         start_time = time.time()
-        test_or_suite(result)
+        test_or_suite.run(result)
         time_taken = time.time() - start_time
 
         result.printSummary()
@@ -633,6 +697,8 @@ def harness(testdir_from_ns={None: os.curdir}, argv=sys.argv,
         return list_tests(testdir_from_ns, tags)
     elif action == "test":
         result = test(testdir_from_ns, tags, setup_func=setup_func)
+        if result is None:
+            return None
         return len(result.errors) + len(result.failures)
     else:
         raise TestError("unexpected action/mode: '%s'" % action)
