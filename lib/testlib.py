@@ -1,6 +1,5 @@
 #!python
-# Copyright (c) 2000-2006 ActiveState Software Inc.
-# See the file LICENSE.txt for licensing information.
+# License: MIT License (http://www.opensource.org/licenses/mit-license.php)
 
 """
     test suite harness
