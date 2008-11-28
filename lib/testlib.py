@@ -49,7 +49,7 @@
 # - See the optparse "TODO" below.
 # - Make the quiet option actually quiet.
 
-__version_info__ = (0, 6, 3)
+__version_info__ = (0, 6, 4)
 __version__ = '.'.join(map(str, __version_info__))
 
 
@@ -144,7 +144,7 @@ def timedtest(max_time, tolerance=TOLERANCE):
 
 #---- module api
 
-class Test:
+class Test(object):
     def __init__(self, ns, testmod, testcase, testfn_name,
                  testsuite_class=None):
         self.ns = ns
@@ -522,7 +522,7 @@ class ConsoleTestResult(unittest.TestResult):
             self.stream.write("%s\n" % err)
 
 
-class ConsoleTestRunner:
+class ConsoleTestRunner(object):
     """A test runner class that displays results on the console.
 
     It prints out the names of tests as they are run, errors as they
