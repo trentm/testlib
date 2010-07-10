@@ -10,6 +10,7 @@ in use in a number of projects with large test cases. You might want to checkout
   unittest.py added this now?). This is helpful for tests of platform-dependent
   or optional features.
 
+# Usage
 
 A typical Python project setup (at least for me) is:
 
