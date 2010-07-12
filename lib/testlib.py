@@ -49,7 +49,7 @@
 # - See the optparse "TODO" below.
 # - Make the quiet option actually quiet.
 
-__version_info__ = (0, 6, 5)
+__version_info__ = (0, 6, 6)
 __version__ = '.'.join(map(str, __version_info__))
 
 

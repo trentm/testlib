@@ -1,6 +1,10 @@
 # testlib Changelog
 
 
+## testlib 0.6.6 (not yet released)
+
+(nothing yet)
+
 ## testlib 0.6.5
 
 - initial Python 3 support
