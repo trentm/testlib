@@ -1,8 +1,10 @@
 # testlib Changelog
 
+
 ## eol 0.6.5 (not yet released)
 
-(nothing yet)
+- initial Python 3 support
+
 
 ## eol 0.6.4
 
