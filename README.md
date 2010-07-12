@@ -1,6 +1,6 @@
 This is my own hacky micro test harness for Python unittests. It is currently
-in use in a number of projects with large test cases. You might want to checkout
-"nose" or "unittest2" first. :) Some features include:
+in use in a number of projects with large test cases. However, you might want
+to checkout "nose" or "unittest2" first. :) Some features include:
 
 - small, you can just put this one file in your "test" dir
 - no external dependencies other than the stdlib
