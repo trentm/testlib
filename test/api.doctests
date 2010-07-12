@@ -1,0 +1,7 @@
+
+>>> import testlib
+>>> hasattr(testlib, "__version__")
+True
+>>> hasattr(testlib, "__version_info__")
+True
+
